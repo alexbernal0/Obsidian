@@ -1,0 +1,52 @@
+import pandas as pd
+import yfinance as yf
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+# Load the data into a pandas dataframe
+file_path = 'BCI 2000.csv'
+df_bci = pd.read_csv(file_path)
+
+# Download SPY data from Yahoo Finance
+spy = yf.download('SPY', start='2000-01-01', end=datetime.now().strftime('%Y-%m-%d'))
+
+# Convert the 'Date' column to datetime
+spy.index = pd.to_datetime(spy.index)
+
+# Create a signal column where 'Buy' is 1 and 'Sell' is -1
+df_bci['Signal'] = df_bci['Trade'].map({'Buy': 1, 'Sell': 0})
+
+# Convert the 'Date' column to datetime and set it as the index
+df_bci['Date'] = pd.to_datetime(df_bci['Date'])
+df_bci.set_index('Date', inplace=True)
+
+# Merge the SPY data with the trade signals
+df_merged = spy[['Close']].join(df_bci['Signal'], how='left').fillna(method='ffill').fillna(0)
+
+# Calculate daily returns of SPY
+df_merged['Daily Returns'] = df_merged['Close'].pct_change()
+
+# Apply the strategy: Invest in SPY on 'Buy' and go to cash (0 return) on 'Sell'
+df_merged['Strategy Returns'] = df_merged['Daily Returns'] * df_merged['Signal']
+
+# Calculate the cumulative returns of the strategy
+df_merged['Cumulative Strategy Returns'] = (1 + df_merged['Strategy Returns']).cumprod()
+
+# Calculate the cumulative returns for a Buy and Hold strategy
+spy['Cumulative Buy and Hold Returns'] = (1 + spy['Close'].pct_change()).cumprod()
+
+# Calculate the rolling maximum cumulative return to date for each strategy
+df_merged['Rolling Max Strategy'] = df_merged['Cumulative Strategy Returns'].cummax()
+spy['Rolling Max Buy and Hold'] = spy['Cumulative Buy and Hold Returns'].cummax()
+
+# Calculate the drawdowns for each strategy
+df_merged['Strategy Drawdown'] = df_merged['Cumulative Strategy Returns'] / df_merged['Rolling Max Strategy'] - 1
+spy['Buy and Hold Drawdown'] = spy['Cumulative Buy and Hold Returns'] / spy['Rolling Max Buy and Hold'] - 1
+
+# Save the consolidated data to a CSV file
+df_merged.to_csv('strategy_data.csv')
+spy.to_csv('spy_data.csv')
+
+# Output the file names for download
+print('Consolidated strategy data saved to strategy_data.csv')
+print('Consolidated SPY data saved to spy_data.csv')
